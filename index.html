@@ -38,14 +38,17 @@
             transform: translateY(-2px);
             box-shadow: 0px 10px 20px rgba(0, 123, 255, 0.3);
         }
-        .btn-secondary {
-             @apply bg-gray-500 text-white font-bold py-2 px-6 rounded-full shadow-md hover:bg-gray-600 transition-all duration-300 transform hover:-translate-y-0.5;
+        .btn-action {
+            @apply text-white px-4 py-1 rounded-full text-sm font-semibold transition-all shadow inline-block;
+        }
+        .btn-action:hover {
+            transform: translateY(-1px);
         }
         .btn-view-cert {
-            @apply bg-green-500 text-white px-4 py-1 rounded-full text-sm font-semibold hover:bg-green-600 transition-all shadow;
+            @apply bg-green-500 hover:bg-green-600;
         }
         .btn-view-video {
-            @apply bg-purple-500 text-white px-4 py-1 rounded-full text-sm font-semibold hover:bg-purple-600 transition-all shadow;
+            @apply bg-purple-500 hover:bg-purple-600;
         }
         .form-input {
             @apply w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all;
@@ -56,13 +59,6 @@
         .card:hover {
             transform: translateY(-5px);
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-        .modal-backdrop {
-            @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 transition-opacity duration-300;
-            backdrop-filter: blur(4px);
-        }
-        body.modal-open {
-            overflow: hidden;
         }
         /* DataTables Customization */
         table.dataTable thead th {
@@ -81,6 +77,9 @@
     </style>
 </head>
 <body class="text-gray-800">
+
+    <!-- Canvas for generating certificate off-screen -->
+    <canvas id="certificateCanvas" width="1123" height="794" class="hidden"></canvas>
 
     <!-- Main Container -->
     <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
@@ -164,39 +163,7 @@
         </div>
 
     </div>
-
-    <!-- Certificate Modal -->
-    <div id="certificateModal" class="modal-backdrop hidden opacity-0">
-        <div class="bg-white rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 max-w-4xl w-full mx-4 transform scale-95 transition-transform duration-300 overflow-y-auto max-h-screen">
-            <div class="text-center mb-4 sm:mb-6">
-                 <h2 class="text-xl md:text-2xl font-bold text-blue-800">จัดทำเกียรติบัตรสำเร็จ!</h2>
-                 <p class="text-sm md:text-base text-gray-600">คุณสามารถดาวน์โหลดเกียรติบัตรในรูปแบบต่างๆ ได้ด้านล่าง</p>
-            </div>
-            <div class="bg-gray-100 p-2 sm:p-4 rounded-lg shadow-inner">
-                <canvas id="certificateCanvas" width="1123" height="794" style="width: 100%; height: auto;"></canvas>
-            </div>
-            <div class="mt-6 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-4">
-                <button id="downloadPNG" class="btn-primary w-full sm:w-auto">ดาวน์โหลด PNG</button>
-                <button id="downloadJPG" class="btn-primary w-full sm:w-auto">ดาวน์โหลด JPG</button>
-                <button id="downloadPDF" class="btn-primary w-full sm:w-auto">ดาวน์โหลด PDF</button>
-                <button onclick="closeModal('certificateModal')" class="btn-secondary w-full sm:w-auto">ปิด</button>
-            </div>
-        </div>
-    </div>
     
-    <!-- Video Modal -->
-    <div id="videoModal" class="modal-backdrop hidden opacity-0">
-        <div class="bg-white rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 max-w-4xl w-11/12 transform scale-95 transition-transform duration-300 flex flex-col">
-            <h2 id="videoModalTitle" class="text-xl md:text-2xl font-bold text-blue-800 mb-4 text-center">รับชมวิดีโอ</h2>
-            <div class="aspect-w-16 aspect-h-9 bg-black rounded-lg overflow-hidden shadow-inner">
-                <iframe id="videoPlayer" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-            </div>
-            <div class="mt-6 text-center">
-                <button onclick="closeModal('videoModal')" class="btn-secondary">ปิด</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Footer -->
     <footer class="text-center py-8 text-gray-500 text-sm mt-8">
         <p>© 2025 สำนักงานเขตพื้นที่การศึกษาประถมศึกษาชลบุรี เขต 2</p>
@@ -216,18 +183,10 @@
         // --- Configuration ---
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcUl14XjRhLawrcAjEZRcmwWwG3mz7eZ_YTEAMNp0Gr5iGDk3-IgRrZv9EFSZA2bvr/exec";
 
-        // --- State ---
-        let isCertificateReady = false;
-        let schoolNameForDownload = '';
-
         // --- DOM Elements ---
         const form = document.getElementById('submissionForm');
-        const certificateModal = document.getElementById('certificateModal');
-        const videoModal = document.getElementById('videoModal');
         const canvas = document.getElementById('certificateCanvas');
         const ctx = canvas.getContext('2d');
-        const videoPlayer = document.getElementById('videoPlayer');
-        const videoModalTitle = document.getElementById('videoModalTitle');
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -235,12 +194,35 @@
             fetchAndDisplayData();
         });
 
+        // --- Reusable Certificate Generation Function ---
+        const handleCertificateGeneration = async (fullName, school, videoType) => {
+            Swal.fire({
+                title: 'กำลังสร้างเกียรติบัตร...',
+                text: 'กรุณารอสักครู่',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            await generateCertificateOnCanvas(fullName, school, videoType);
+            const imgDataUrl = canvas.toDataURL('image/png');
+            
+            const newWindow = window.open();
+            newWindow.document.write(`
+                <html>
+                    <head><title>เกียรติบัตร - ${school}</title><style>body{margin:0; background:#f0f0f0; display:flex; justify-content:center; align-items:center; height:100vh;}img{max-width:100%; max-height:100%; box-shadow: 0 0 20px rgba(0,0,0,0.15);}</style></head>
+                    <body><img src="${imgDataUrl}" alt="เกียรติบัตร"></body>
+                </html>`);
+            newWindow.document.close();
+            
+            Swal.close();
+        };
+
         // --- Form Submission Logic ---
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             Swal.fire({
                 title: 'กำลังบันทึกข้อมูล...',
-                text: 'กรุณารอสักครู่ ระบบกำลังดำเนินการ',
+                text: 'กรุณารอสักครู่',
                 allowOutsideClick: false,
                 didOpen: () => { Swal.showLoading(); }
             });
@@ -251,14 +233,20 @@
                 const result = await response.json();
 
                 if (result.result === 'success') {
-                    Swal.close();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'บันทึกข้อมูลสำเร็จ!',
+                        text: 'ระบบจะเปิดเกียรติบัตรในหน้าต่างใหม่',
+                        showConfirmButton: false,
+                        timer: 2000
+                    });
+
                     const schoolName = formData.get('school');
                     const videoType = formData.get('videoType');
                     const fullName = `${formData.get('firstName')} ${formData.get('lastName')}`;
-                    schoolNameForDownload = schoolName;
+                    
+                    await handleCertificateGeneration(fullName, schoolName, videoType);
 
-                    await generateCertificate(fullName, schoolName, videoType);
-                    openModal('certificateModal');
                     form.reset();
                     fetchAndDisplayData();
                 } else {
@@ -269,17 +257,22 @@
             }
         });
 
-        // --- Certificate Generation ---
-        async function generateCertificate(fullName, school, videoType) {
-            isCertificateReady = false;
-            // ... (The rest of the generateCertificate function is unchanged)
+        // --- Certificate Drawing on Canvas ---
+        async function generateCertificateOnCanvas(fullName, school, videoType) {
+            // ... (The drawing logic is the same as before)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#f8fcff';
+            ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#333';
-            ctx.font = '30px Sarabun';
-            ctx.textAlign = 'center';
-            ctx.fillText('กำลังสร้างเกียรติบัตร...', canvas.width / 2, canvas.height / 2);
+            
+            // Draw pattern
+            ctx.strokeStyle = 'rgba(227, 242, 253, 0.6)';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < canvas.width + canvas.height; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(0, i);
+                ctx.stroke();
+            }
 
             const logoTop = new Image();
             const logoSign = new Image();
@@ -299,20 +292,6 @@
             });
 
             await Promise.all([logoTopPromise, logoSignPromise]);
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw pattern
-            ctx.strokeStyle = 'rgba(227, 242, 253, 0.6)';
-            ctx.lineWidth = 0.5;
-            for (let i = 0; i < canvas.width + canvas.height; i += 20) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(0, i);
-                ctx.stroke();
-            }
 
             ctx.strokeStyle = '#0056b3';
             ctx.lineWidth = 10;
@@ -349,73 +328,26 @@
             ctx.fillText('(นายวันชัย หวังสวาสดิ์)', canvas.width / 2, 700);
             ctx.font = '24px Sarabun';
             ctx.fillText('ผู้อำนวยการสำนักงานเขตพื้นที่การศึกษาประถมศึกษาชลบุรี เขต 2', canvas.width / 2, 740);
-            
-            isCertificateReady = true;
         }
-
-        // --- Modal Controls ---
-        function openModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (!modal) return;
-            document.body.classList.add('modal-open');
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                modal.querySelector('div[class*="transform"]').classList.remove('scale-95');
-            }, 10);
-        }
-
-        function closeModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (!modal) return;
-            document.body.classList.remove('modal-open');
-            modal.classList.add('opacity-0');
-            modal.querySelector('div[class*="transform"]').classList.add('scale-95');
-            setTimeout(() => { 
-                modal.classList.add('hidden');
-                // Stop video when modal is closed
-                if (modalId === 'videoModal') {
-                    videoPlayer.src = '';
-                }
-            }, 300);
-        }
-
-        // --- Download Logic ---
-        // ... (Download functions are unchanged)
-        function downloadCanvas(format) {
-            if (!isCertificateReady) {
-                Swal.fire('กรุณารอสักครู่', 'เกียรติบัตรกำลังถูกจัดทำ', 'info');
-                return;
-            }
-            const mimeType = `image/${format}`;
-            const filename = `เกียรติบัตร-${schoolNameForDownload || 'school'}.${format}`;
-
-            canvas.toBlob((blob) => {
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(link.href);
-            }, mimeType, 0.95);
-        }
-
-        document.getElementById('downloadPNG').addEventListener('click', () => downloadCanvas('png'));
-        document.getElementById('downloadJPG').addEventListener('click', () => downloadCanvas('jpeg'));
         
-        document.getElementById('downloadPDF').addEventListener('click', () => {
-             if (!isCertificateReady) {
-                Swal.fire('กรุณารอสักครู่', 'เกียรติบัตรกำลังถูกจัดทำ', 'info');
-                return;
+        // --- Video URL Helper ---
+        function getWatchUrl(url) {
+            let watchUrl = url;
+            // YouTube
+            if (url.includes("youtube.com/embed/")) {
+                const videoId = url.split('/embed/')[1].split('?')[0];
+                watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+            } else if (url.includes("youtu.be/")) {
+                const videoId = url.split('youtu.be/')[1].split('?')[0];
+                watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
             }
-            const { jsPDF } = window.jspdf;
-            const imgData = canvas.toDataURL('image/jpeg', 1.0);
-            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-            pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
-            const filename = `เกียรติบัตร-${schoolNameForDownload || 'school'}.pdf`;
-            pdf.save(filename);
-        });
+            // Google Drive
+            else if (url.includes("drive.google.com/file/d/")) {
+                const fileId = url.split('/d/')[1].split('/')[0];
+                watchUrl = `https://drive.google.com/file/d/${fileId}/view`;
+            }
+            return watchUrl;
+        }
 
         // --- Data Fetching and Table Display ---
         async function fetchAndDisplayData() {
@@ -441,10 +373,11 @@
                                 const school = row.school.replace(/"/g, '&quot;');
                                 const fullName = row.fullName.replace(/"/g, '&quot;');
                                 const videoType = row.videoType.replace(/"/g, '&quot;');
-                                const videoUrl = row.videoUrl.replace(/"/g, '&quot;');
+                                const watchUrl = getWatchUrl(row.videoUrl);
+                                
                                 return `<div class="flex flex-col sm:flex-row gap-2 justify-center">
-                                            <button class="btn-view-video" data-url="${videoUrl}" data-school="${school}">ดูวิดีโอ</button>
-                                            <button class="btn-view-cert" data-school="${school}" data-fullname="${fullName}" data-videotype="${videoType}">ดูเกียรติบัตร</button>
+                                            <a href="${watchUrl}" target="_blank" rel="noopener noreferrer" class="btn-action btn-view-video">ดูวิดีโอ</a>
+                                            <button class="btn-action btn-view-cert" data-school="${school}" data-fullname="${fullName}" data-videotype="${videoType}">ดูเกียรติบัตร</button>
                                         </div>`;
                             }
                         }
@@ -466,55 +399,13 @@
             }
         }
         
-        // --- Video URL Helper ---
-        function getEmbedUrl(url) {
-            let embedUrl = url;
-            // YouTube
-            if (url.includes("youtube.com/watch?v=")) {
-                const videoId = url.split('v=')[1].split('&')[0];
-                embedUrl = `https://www.youtube.com/embed/${videoId}`;
-            } else if (url.includes("youtu.be/")) {
-                const videoId = url.split('youtu.be/')[1].split('?')[0];
-                embedUrl = `https://www.youtube.com/embed/${videoId}`;
-            }
-            // Google Drive
-            else if (url.includes("drive.google.com/file/d/")) {
-                const fileId = url.split('/d/')[1].split('/')[0];
-                embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-            }
-            return embedUrl;
-        }
-
         // --- Table Button Event Listeners ---
-        $('#schoolTable tbody').on('click', '.btn-view-cert', async function() {
+        $('#schoolTable tbody').on('click', '.btn-view-cert', function() {
             const button = $(this);
             const school = button.data('school');
             const fullName = button.data('fullname');
             const videoType = button.data('videotype');
-
-            Swal.fire({
-                title: 'กำลังเตรียมเกียรติบัตร...',
-                allowOutsideClick: false,
-                didOpen: () => { Swal.showLoading(); }
-            });
-
-            schoolNameForDownload = school;
-            await generateCertificate(fullName, school, videoType);
-            
-            Swal.close();
-            openModal('certificateModal');
-        });
-
-        $('#schoolTable tbody').on('click', '.btn-view-video', function() {
-            const button = $(this);
-            const url = button.data('url');
-            const school = button.data('school');
-            
-            const embedUrl = getEmbedUrl(url);
-            
-            videoModalTitle.textContent = `วิดีโอจาก: ${school}`;
-            videoPlayer.src = embedUrl;
-            openModal('videoModal');
+            handleCertificateGeneration(fullName, school, videoType);
         });
     </script>
 
